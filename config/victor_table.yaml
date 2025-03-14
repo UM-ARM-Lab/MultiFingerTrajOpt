@@ -1,0 +1,79 @@
+---
+T: 12
+receding_horizon: False
+num_steps: 12
+num_trials: 20
+controllers:
+  csvgd:
+    N: 6
+    alpha_J: 0.01
+    alpha_C: 1
+    step_size: 0.05
+    momentum: .0
+    device: 'cuda:0'
+    online_iters: 25
+    warmup_iters: 250
+  ipopt:
+    device: 'cpu'
+    online_iters: 25
+    warmup_iters: 250
+  mppi_10000:
+    N: 1000
+    lambda: 1.0e-4
+    sigma: 0.025
+    device: 'cuda:0'
+    penalty: 10000
+    online_iters: 25
+    warmup_iters: 250
+  svgd_10000:
+    M: 6
+    N: 128
+    step_size: 0.05
+    sigma: 0.025
+    lambda: 1.0e-4
+    use_grad: False
+    penalty: 10000
+    online_iters: 25
+    warmup_iters: 250
+    device: 'cuda:0'
+  mppi_100:
+    N: 1000
+    lambda: 1.0e-4
+    sigma: 0.025
+    device: 'cuda:0'
+    penalty: 100
+    online_iters: 25
+    warmup_iters: 250
+  svgd_1000:
+    M: 6
+    N: 128
+    step_size: 0.1
+    sigma: 0.025
+    lambda: 1.0e-4
+    use_grad: False
+    penalty: 1000
+    online_iters: 50
+    warmup_iters: 500
+    device: 'cuda:0'
+  svgd_grad_10000:
+    M: 6
+    N: 128
+    step_size: 0.025
+    sigma: 0.05
+    lambda: 100
+    use_grad: True
+    penalty: 10000
+    online_iters: 25
+    warmup_iters: 250
+    device: 'cuda:0'
+  svgd_grad_1000:
+    M: 6
+    N: 128
+    step_size: 0.025
+    sigma: 0.05
+    lambda: 100
+    use_grad: True
+    penalty: 1000
+    online_iters: 25
+    warmup_iters: 250
+    device: 'cuda:0'
