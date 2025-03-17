@@ -1,12 +1,12 @@
 from setuptools import setup
 
 setup(
-    name='ccai',
+    name='MultiFingerTrajOpt',
     version='0.1.0',
-    packages=['ccai'],
-    author='zhsh',
-    author_email='tpower@umich.edu',
-    description='Constrained control-as-inference with SVGD',
+    packages=['optimization'],
+    author='fanyang',
+    author_email='fanyangr@umich.edu',
+    description='MultiFingered Trajectory Optimization for Allegro Hand',
     install_requires=[
         'torch',
         'numpy',

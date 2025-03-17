@@ -68,7 +68,6 @@ class AllegroCuboidAlignment(AllegroValveTurning):
                  optimize_force=False,
                  obj_dof_code=[1, 1, 1, 1, 1, 1],
                  obj_gravity=False,
-                 arm_type='None',
                  arm_stiffness=None,
                  finger_stiffness=None,
                  collision_checking=True,
@@ -83,16 +82,7 @@ class AllegroCuboidAlignment(AllegroValveTurning):
                                         device=device).float(), device=device)
         self.wall_asset_pos = wall_asset_pos
         self.wall_dims = wall_dims.astype('float32')
-        if arm_type == 'None':
-            self.arm_dof = 0
-        elif arm_type == 'robot':
-            self.arm_dof = 7
-        elif arm_type == 'floating_3d':
-            self.arm_dof = 3
-        elif arm_type == 'floating_6d':
-            self.arm_dof = 6
-        else:
-            raise ValueError('Invalid arm type')
+        self.arm_dof = 0
         robot_dof = self.arm_dof + 4 * self.num_fingers
         du = robot_dof + 3 * self.num_fingers + 3 
         self.obj_mass = 0.01
@@ -102,7 +92,7 @@ class AllegroCuboidAlignment(AllegroValveTurning):
                                                  object_type=object_type, world_trans=world_trans, object_asset_pos=cuboid_asset_pos,
                                                  fingers=fingers, friction_coefficient=friction_coefficient, obj_dof_code=obj_dof_code, 
                                                  obj_joint_dim=0, optimize_force=optimize_force, du=du, obj_gravity=obj_gravity, 
-                                                 arm_type=arm_type, arm_stiffness=arm_stiffness, finger_stiffness=finger_stiffness, 
+                                                 arm_stiffness=arm_stiffness, finger_stiffness=finger_stiffness, 
                                                  collision_checking=self.collision_checking, device=device)
         self.env_force = True
         self.friction_coefficient = friction_coefficient
@@ -273,9 +263,6 @@ class AllegroCuboidAlignment(AllegroValveTurning):
 
         # u = 0.025 * torch.randn(N, self.T, self.du, device=self.device)
         u = 0.025 * torch.randn(N, self.T, 4 * self.num_fingers, device=self.device)
-        if self.arm_type == 'robot':
-            arm_u = 0.002 * torch.randn(N, self.T, 7, device=self.device)
-            u = torch.cat((arm_u, u), dim=-1)
         force = 0.015 * torch.randn(N, self.T, 3 * (self.num_fingers + 1), device=self.device)
         force[:, :, -3:] = force[:, :, -3:] * 0.1
         force = force * 10 # increase the force to make it transferrable on the hardware

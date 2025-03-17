@@ -12,7 +12,6 @@ def get_env(task, img_save_dir, config, num_envs=1):
                                             joint_stiffness=config['kp'],
                                             fingers=config['fingers'],
                                             gradual_control=config['gradual_control'],
-                                            arm_type=config['arm_type'],
                                             gravity=config['gravity'],
                                             )
     elif task == 'valve_turning':

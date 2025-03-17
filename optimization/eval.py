@@ -1,5 +1,4 @@
 
-# from isaacsim_hand_envs.allegro import AllegroScrewdriverEnv # it needs to be imported before numpy and torch
 from MFR_benchmark.tasks.allegro import *
 from MFR_benchmark.utils import get_assets_dir
 import numpy as np
@@ -7,7 +6,6 @@ import pickle as pkl
 
 import torch
 import time
-import copy
 import yaml
 import pathlib
 from functools import partial
@@ -15,15 +13,12 @@ from functools import partial
 import time
 import pytorch_volumetric as pv
 import pytorch_kinematics as pk
-import pytorch_kinematics.transforms as tf
 
-import matplotlib.pyplot as plt # from utils.allegro_utils import partial_to_full_state, full_to_partial_state, combine_finger_constraints, state2ee_pos, visualize_trajectory, all_finger_constraints
 from allegro_valve_roll import AllegroValveTurning, AllegroContactProblem, PositionControlConstrainedSVGDMPC
-from allegro_screwdriver_w_force import AllegroScrewdriver
-from examples.allegro_cuboid_turning import AllegroCuboidTurning
-from examples.allegro_cuboid_alignment_w_force import AllegroCuboidAlignment
+from optimization.allegro_screwdriver import AllegroScrewdriver
+from optimization.allegro_cuboid_turning import AllegroCuboidTurning
+from optimization.allegro_cuboid_alignment_w_force import AllegroCuboidAlignment
 from allegro_reorientation import AllegroReorientation
-from scipy.spatial.transform import Rotation as R
 
 from utils.allegro_utils import *
 from tqdm import tqdm
@@ -36,14 +31,10 @@ img_save_dir = pathlib.Path(f'{CCAI_PATH}/data/experiments/videos')
 def do_trial(env, params, fpath, sim_viz_env=None, ros_copy_node=None):
     "only turn the screwdriver once"
     obj_dof = params['obj_dof']
-    if params['arm_type'] == 'robot':
-        camera_params = "screwdriver_w_arm"
-    elif params['arm_type'] == 'None' or params['arm_type'] == 'floating_3d' or params['arm_type'] == 'floating_6d':
-        camera_params = "screwdriver"
+    camera_params = "screwdriver"
     goal = params['goal'].cpu()
     num_fingers = len(params['fingers'])
-    arm_dof = get_arm_dof(params['arm_type'])
-    robot_dof = 4 * num_fingers + arm_dof
+    robot_dof = 4 * num_fingers
     if params['object_type'] == 'screwdriver':
         obj_joint_dim = 1 # compensate for the screwdriver cap
     else:
@@ -85,8 +76,6 @@ def do_trial(env, params, fpath, sim_viz_env=None, ros_copy_node=None):
                 obj_dof_code=params['obj_dof_code'],
                 obj_joint_dim=obj_joint_dim,
                 fixed_obj=True,
-                geometry_grad=params['geometry_grad'],
-                arm_type=params['arm_type'],
             )
 
             pregrasp_planner = PositionControlConstrainedSVGDMPC(pregrasp_problem, params)
@@ -142,8 +131,6 @@ def do_trial(env, params, fpath, sim_viz_env=None, ros_copy_node=None):
                 collision_checking=params['collision_checking'],
                 obj_gravity=params['obj_gravity'],
                 contact_region=params['contact_region'],
-                geometry_grad=params['geometry_grad'],
-                arm_type=params['arm_type'],
             )
         elif config['task'] == 'valve_turning':
             manipulation_problem = AllegroValveTurning(
@@ -158,9 +145,7 @@ def do_trial(env, params, fpath, sim_viz_env=None, ros_copy_node=None):
                 friction_coefficient=params['friction_coefficient'],
                 world_trans=env.world_trans,
                 fingers=params['fingers'],
-                arm_type=params['arm_type'],
                 optimize_force=params['optimize_force'],
-                geometry_grad=params['geometry_grad'],
                 obj_dof_code=params['obj_dof_code'],
             )
         elif config['task'] == 'cuboid_turning':
@@ -178,7 +163,6 @@ def do_trial(env, params, fpath, sim_viz_env=None, ros_copy_node=None):
                 device=params['device'],
                 fingers=params['fingers'],
                 obj_dof_code=params['obj_dof_code'],
-                geometry_grad=params['geometry_grad'],
                 obj_gravity=params['obj_gravity'],
             )
         elif config['task'] == 'cuboid_alignment':
@@ -198,7 +182,6 @@ def do_trial(env, params, fpath, sim_viz_env=None, ros_copy_node=None):
                             fingers=params['fingers'],
                             optimize_force=params['optimize_force'],
                             obj_gravity = params['obj_gravity'],
-                            arm_type = params['arm_type'],
                             collision_checking=params['collision_checking'],
                         )
         elif config['task'] == 'reorientation':
@@ -216,7 +199,6 @@ def do_trial(env, params, fpath, sim_viz_env=None, ros_copy_node=None):
                 device=params['device'],
                 fingers=params['fingers'],
                 obj_dof_code=params['obj_dof_code'],
-                geometry_grad=params['geometry_grad'],
                 obj_gravity=params['obj_gravity'],
             )
 
@@ -260,7 +242,6 @@ def do_trial(env, params, fpath, sim_viz_env=None, ros_copy_node=None):
                 if obj_joint_dim > 0:
                     tmp = torch.zeros((traj_for_viz.shape[0], obj_joint_dim), device=best_traj.device) # add the joint for the screwdriver cap
                     traj_for_viz = torch.cat((traj_for_viz, tmp), dim=1)
-                # traj_for_viz[:, 4 * num_fingers: 4 * num_fingers + obj_dof] = axis_angle_to_euler(traj_for_viz[:, 4 * num_fingers: 4 * num_fingers + obj_dof])
             
                 viz_fpath = pathlib.PurePath.joinpath(fpath, f"timestep_{k}")
                 img_fpath = pathlib.PurePath.joinpath(viz_fpath, 'img')
@@ -282,16 +263,11 @@ def do_trial(env, params, fpath, sim_viz_env=None, ros_copy_node=None):
                 print("planned force")
                 print(action[:, robot_dof:].reshape(num_fingers + params['num_env_force'], 3)) # print out the action for debugging
                 print("delta action")
-                if params['arm_type'] != 'None':
-                    print(action[:, :arm_dof])
-                    print(action[:, arm_dof:manipulation_problem.robot_dof].reshape(num_fingers, 4))
-                else:
-                    print(action[:, :robot_dof].reshape(num_fingers, 4))
+                print(action[:, :robot_dof].reshape(num_fingers, 4))
             action = action[:, :robot_dof]
             action = action + start.unsqueeze(0)[:, :robot_dof].to(action.device) # NOTE: this is required since we define action as delta action
         env.step(action)
         action_list.append(action)
-        # manipulation_problem._preprocess(best_traj.unsqueeze(0))
         
         obj_state = env.get_state()[:, -obj_dof:].cpu()
         if params['task'] == 'screwdriver_turning':
@@ -308,8 +284,6 @@ def do_trial(env, params, fpath, sim_viz_env=None, ros_copy_node=None):
             info = {**equality_constr_dict, **inequality_constr_dict, **{'distance2goal': distance2goal, 'validity_flag': validity_flag}}
         info_list.append(info)
 
-        # if params['simulator'] == 'isaac_gym':
-        #     gym.clear_lines(viewer)
         state = env.get_state()
         start = state.squeeze(0).to(device=params['device'])
     with open(f'{fpath.resolve()}/info.pkl', 'wb') as f:
@@ -351,6 +325,11 @@ def do_trial(env, params, fpath, sim_viz_env=None, ros_copy_node=None):
     return ret
 
 if __name__ == "__main__":
+    # add argument parser
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--task', type=str, default='screwdriver_turning', help='task to evaluate')
+    parser.add_argument('--method', type=str, default='csvgd', help='method to evaluate')
     # get config
     task = 'screwdriver_turning'
     # task = 'valve_turning'
@@ -363,23 +342,23 @@ if __name__ == "__main__":
     # method = 'planning'
 
     if task == 'screwdriver_turning':
-        config = yaml.safe_load(pathlib.Path(f'{CCAI_PATH}/examples/config/allegro_screwdriver.yaml').read_text())
+        config = yaml.safe_load(pathlib.Path(f'{CCAI_PATH}/optimization/config/allegro_screwdriver.yaml').read_text())
         config['obj_dof_code'] = [0, 0, 0, 1, 1, 1]        
         config['num_env_force'] = 1
     elif task == 'valve_turning':
-        config = yaml.safe_load(pathlib.Path(f'{CCAI_PATH}/examples/config/allegro_valve.yaml').read_text())
+        config = yaml.safe_load(pathlib.Path(f'{CCAI_PATH}/optimization/config/allegro_valve.yaml').read_text())
         config['obj_dof_code'] = [0, 0, 0, 0, 1, 0]
         config['num_env_force'] = 0
     elif task == 'cuboid_turning':
-        config = yaml.safe_load(pathlib.Path(f'{CCAI_PATH}/examples/config/allegro_cuboid_turning.yaml').read_text())
+        config = yaml.safe_load(pathlib.Path(f'{CCAI_PATH}/optimization/config/allegro_cuboid_turning.yaml').read_text())
         config['obj_dof_code'] = [1, 1, 1, 1, 1, 1]
         config['num_env_force'] = 0
     elif task == 'cuboid_alignment':
-        config = yaml.safe_load(pathlib.Path(f'{CCAI_PATH}/examples/config/allegro_cuboid_alignment.yaml').read_text())
+        config = yaml.safe_load(pathlib.Path(f'{CCAI_PATH}/optimization/config/allegro_cuboid_alignment.yaml').read_text())
         config['obj_dof_code'] = [1, 1, 1, 1, 1, 1]
         config['num_env_force'] = 1
     elif task == 'reorientation':
-        config = yaml.safe_load(pathlib.Path(f'{CCAI_PATH}/examples/config/allegro_reorientation.yaml').read_text())
+        config = yaml.safe_load(pathlib.Path(f'{CCAI_PATH}/optimization/config/allegro_reorientation.yaml').read_text())
         config['obj_dof_code'] = [1, 1, 1, 1, 1, 1]
         config['num_env_force'] = 0
 
@@ -398,24 +377,8 @@ if __name__ == "__main__":
     results = {}
 
     # set up the kinematic chain
-    if config['arm_type'] == 'robot':
-        asset = f'{get_assets_dir()}/xela_models/victor_allegro.urdf'
-        arm_dof = 7
-    elif config['arm_type'] == 'floating_3d':
-        asset = f'{get_assets_dir()}/xela_models/allegro_hand_right_floating_3d.urdf'
-        arm_dof = 3
-    elif config['arm_type'] == 'floating_6d':
-        asset = f'{get_assets_dir()}/xela_models/allegro_hand_right_floating_6d.urdf'
-        arm_dof = 6
-    elif config['arm_type'] == 'None':
-        asset = f'{get_assets_dir()}/xela_models/allegro_hand_right.urdf'
-        arm_dof = 0
-    # ee_names = {
-    #         'index': 'allegro_hand_hitosashi_finger_finger_0_aftc_base_link',
-    #         'middle': 'allegro_hand_naka_finger_finger_1_aftc_base_link',
-    #         'ring': 'allegro_hand_kusuri_finger_finger_2_aftc_base_link',
-    #         'thumb': 'allegro_hand_oya_finger_3_aftc_base_link',
-    #         }
+    asset = f'{get_assets_dir()}/xela_models/allegro_hand_right.urdf'
+    arm_dof = 0
     ee_names = {
             'index': 'hitosashi_ee',
             'middle': 'naka_ee',

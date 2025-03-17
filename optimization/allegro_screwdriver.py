@@ -68,26 +68,13 @@ class AllegroScrewdriver(AllegroValveTurning):
                  device='cuda:0', 
                  obj_gravity=False,
                  contact_region=False,
-                 geometry_grad=True,
-                 arm_type='None',
                  **kwargs):
         self.num_fingers = len(fingers)
         self.obj_dof_code = [0, 0, 0, 1, 1, 1]
         self.optimize_force = optimize_force
         self.obj_mass = 0.05
         self.contact_region = contact_region
-        self.geometry_grad = geometry_grad
-        self.arm_type = arm_type
-        if self.arm_type == 'None':
-            self.arm_dof = 0
-        elif self.arm_type == 'robot':
-            self.arm_dof = 7
-        elif self.arm_type == 'floating_3d':
-            self.arm_dof = 3
-        elif self.arm_type == 'floating_6d':
-            self.arm_dof = 6
-        else:
-            raise ValueError('Invalid arm type')
+        self.arm_dof = 0
         self.robot_dof = self.arm_dof + 4 * self.num_fingers
         du = self.robot_dof + 3 * self.num_fingers + 3 
         super(AllegroScrewdriver, self).__init__(start=start, goal=goal, T=T, chain=chain, object_location=object_location,
@@ -97,8 +84,7 @@ class AllegroScrewdriver(AllegroValveTurning):
                                                  obj_joint_dim=1, optimize_force=optimize_force, 
                                                  screwdriver_force_balance=force_balance,
                                                  collision_checking=collision_checking, obj_gravity=obj_gravity,
-                                                 contact_region=contact_region, du=du, geometry_grad=geometry_grad, 
-                                                 arm_type=arm_type, device=device)
+                                                 contact_region=contact_region, du=du, device=device)
         self.min_force_dict = {'index': 0.0001, 'middle': 0.1, 'ring': 0.1, 'thumb': 0.1}
         # self.min_force_dict = {'index': 0.0001, 'middle': 1.0, 'ring': 1.0, 'thumb': 1.0}
         self.friction_coefficient = friction_coefficient
@@ -126,9 +112,6 @@ class AllegroScrewdriver(AllegroValveTurning):
 
         # u = 0.025 * torch.randn(N, self.T, self.du, device=self.device)
         u = 0.025 * torch.randn(N, self.T, 4 * self.num_fingers, device=self.device)
-        if self.arm_type != 'None':
-            arm_u = 0.000001 * torch.randn(N, self.T, self.arm_dof, device=self.device)
-            u = torch.cat((arm_u, u), dim=-1)
         force = 1.5 * torch.randn(N, self.T, 3 * self.num_fingers + 3, device=self.device)
         force[:, :, :3] = force[:, :, :3] * 0.01 # NOTE: scale down the index finger force, might not apply to situations other than screwdriver
         force[:, :, -3:] = force[:, :, -3:] * 0.01 # expect the environment force to be small
@@ -189,25 +172,6 @@ class AllegroScrewdriver(AllegroValveTurning):
 
         smoothness_cost = 1 * torch.sum((state[1:, self.arm_dof:] - state[:-1, self.arm_dof:]) ** 2)
         smoothness_cost += 50 * torch.sum((state[1:, -self.obj_dof:] - state[:-1, -self.obj_dof:]) ** 2)
-        if self.arm_type == 'robot':
-            ee_pose = self.chain.forward_kinematics(partial_to_full_state(state[:, :self.robot_dof], fingers=self.fingers, arm_dof=self.arm_dof))['allegro_hand_base_link']
-            ee_positions = ee_pose.get_matrix()[:, :3, 3]
-            ee_orn = ee_pose.get_matrix()[:, :3, :3]
-            ee_orn_6d = tf.matrix_to_rotation_6d(ee_orn)
-            smoothness_cost += 3000 * torch.sum((ee_positions[1:] - ee_positions[:-1]) ** 2)
-            smoothness_cost += 3000 * torch.sum((ee_orn_6d[1:] - ee_orn_6d[:-1]) ** 2)
-            smoothness_cost += 3000 *  torch.sum((state[1:, :self.arm_dof] - state[:-1, :self.arm_dof]) ** 2) # penalize the arm movement
-            action_cost += 3000 * torch.sum((action[:, :self.arm_dof]) ** 2)
-            smoothness_cost += 500 * torch.sum((state[1:, -self.obj_dof:] - state[:-1, -self.obj_dof:]) ** 2)
-            # smoothness_cost += 500 * torch.sum((ee_positions[1:] - ee_positions[:-1]) ** 2)
-            # smoothness_cost += 5 * torch.sum((ee_orn_6d[1:] - ee_orn_6d[:-1]) ** 2)
-            # smoothness_cost += 1 *  torch.sum((state[1:, :self.arm_dof] - state[:-1, :self.arm_dof]) ** 2) # penalize the arm movement
-        elif self.arm_type == 'floating_3d':
-            smoothness_cost += 20 * torch.sum((state[1:, :3] - state[:-1, :3]) ** 2)
-        elif self.arm_type == 'floating_6d':
-            # smoothness_cost += 20 * torch.sum((state[1:, :6] - state[:-1, :6]) ** 2)
-            smoothness_cost += 500 * torch.sum((state[1:, :3] - state[:-1, :3]) ** 2)
-            smoothness_cost += 50 * torch.sum((state[1:, 3:6] - state[:-1, 3:6]) ** 2)
 
         upright_cost = 10000 * torch.sum((state[:, -self.obj_dof:-1]) ** 2) # the screwdriver should only rotate in z direction
 
