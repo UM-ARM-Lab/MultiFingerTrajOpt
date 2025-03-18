@@ -14,27 +14,25 @@ device: 'cuda:0'
 friction_coefficient: 0.95
 kp: 6.0 # kp is increased to compenstate for gravity
 visualize_plan: True
-optimize_force: True
 force_balance: False  # in addition to the torque balance, do we also need force balance, just for the screwdriver turning experiment w\o slot. 
 gradual_control: True
 gravity: True  # whether to use gravity in the simulation
 goal: [0, 0, 0, 0, -1.5707, 0]
 controllers:
-  csvgd:
-    N: 16
-    alpha_J: 5.0e-3
-    alpha_C: 1
-    step_size: 0.1
-    momentum: 0.
-    use_momentum: False
-    online_iters: 30
-    warmup_iters: 200
-    resample_steps: 1
-    resample_sigma: 0.01
-    resample_temperature: 0.1
-    penalty: 1000000
-    collision_checking: False
-    random_init_every_iter: False
-    obj_gravity: True # whether to conside the object gravity in our optimization
-    contact_region: False # whether to consider the contact region of the index finegr in our optimization
-    static_init: False # whether to use the static initialization for the optimization
+  N: 16
+  alpha_J: 5.0e-3
+  alpha_C: 1
+  step_size: 0.1
+  momentum: 0.
+  use_momentum: False
+  online_iters: 30
+  warmup_iters: 200
+  resample_steps: 1
+  resample_sigma: 0.01
+  resample_temperature: 0.1
+  penalty: 1000000
+  collision_checking: False
+  random_init_every_iter: False
+  obj_gravity: True # whether to conside the object gravity in our optimization
+  contact_region: False # whether to consider the contact region of the index finegr in our optimization
+  static_init: False # whether to use the static initialization for the optimization

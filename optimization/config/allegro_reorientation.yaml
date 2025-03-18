@@ -14,24 +14,22 @@ device: 'cuda:0'
 friction_coefficient: 0.95
 kp: 3.0
 visualize_plan: False
-optimize_force: True
 force_balance: False  # in addition to the torque balance, do we also need force balance, just for the screwdriver turning experiment w\o slot. 
 gradual_control: True
 gravity: True  # whether to use gravity in the simulation
 goal: [-0.01, 0, 0, 0, 0, -1.0472]
 controllers:
-  csvgd:
-    N: 16
-    alpha_J: 5.0e-3
-    alpha_C: 1
-    step_size: 0.1
-    momentum: 0.
-    use_momentum: False
-    online_iters: 30
-    warmup_iters: 200
-    resample_steps: 1
-    resample_sigma: 0.01
-    resample_temperature: 0.1
-    penalty: 1000000
-    random_init_every_iter: False
-    obj_gravity: True # whether to conside the object gravity in our optimization
+  N: 16
+  alpha_J: 5.0e-3
+  alpha_C: 1
+  step_size: 0.1
+  momentum: 0.
+  use_momentum: False
+  online_iters: 30
+  warmup_iters: 200
+  resample_steps: 1
+  resample_sigma: 0.01
+  resample_temperature: 0.1
+  penalty: 1000000
+  random_init_every_iter: False
+  obj_gravity: True # whether to conside the object gravity in our optimization

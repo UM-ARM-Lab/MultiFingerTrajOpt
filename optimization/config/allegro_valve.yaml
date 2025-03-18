@@ -7,32 +7,28 @@ experiment_name: 'allegro_valve_test'
 mode: 'simulation'  # choose from 'simulation', 'hardware', 'hardware_copy'
 fingers: ['index', 'middle', 'thumb']
 simulator: "isaac_gym" # choose from 'isaac_sim', 'isaac_gym'
-# fingers: ['index', 'middle', 'thumb', 'ring']
 object_type: 'cross_valve'
-# object_type: 'cylinder_valve'
 sim_device: 'cpu'
 device: 'cuda:0'
 friction_coefficient: 0.9
 kp: 3.0
 visualize_plan: False
 random_robot_pose: False
-optimize_force: True
 gravity: True  # whether to use gravity in the simulation
 goal: [-0.785398]
 controllers:
-  csvgd:
-    T: 8
-    # N: 16
-    N: 4
-    alpha_J: 5.0e-3
-    alpha_C: 1
-    step_size: 0.1
-    momentum: 0.
-    online_iters: 30
-    warmup_iters: 100
-    resample_steps: 1
-    resample_sigma: 0.01
-    resample_temperature: 0.1
-    penalty: 1000000
-    collision_checking: False
-    random_init_every_iter: False
+  T: 8
+  # N: 16
+  N: 4
+  alpha_J: 5.0e-3
+  alpha_C: 1
+  step_size: 0.1
+  momentum: 0.
+  online_iters: 30
+  warmup_iters: 100
+  resample_steps: 1
+  resample_sigma: 0.01
+  resample_temperature: 0.1
+  penalty: 1000000
+  collision_checking: False
+  random_init_every_iter: False

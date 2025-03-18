@@ -14,25 +14,22 @@ device: 'cuda:0'
 friction_coefficient: 0.95
 kp: 3.0
 visualize_plan: False
-optimize_force: True
 gradual_control: True
 use_arm: False
 gravity: True  # whether to use gravity in the simulation
 goal: [-0.05, 0.0, 0.08, 0, 0, 0]
 controllers:
-  csvgd:
-    N: 16
-    # N: 4
-    alpha_J: 5.0e-3
-    alpha_C: 1
-    step_size: 0.1
-    momentum: 0.
-    online_iters: 50
-    warmup_iters: 300
-    resample_steps: 1
-    resample_sigma: 0.01
-    resample_temperature: 0.1
-    penalty: 1000000
-    collision_checking: True
-    random_init_every_iter: False
-    obj_gravity: True # whether to conside the obj gravity in our optimization
+  N: 16
+  alpha_J: 5.0e-3
+  alpha_C: 1
+  step_size: 0.1
+  momentum: 0.
+  online_iters: 50
+  warmup_iters: 300
+  resample_steps: 1
+  resample_sigma: 0.01
+  resample_temperature: 0.1
+  penalty: 1000000
+  collision_checking: True
+  random_init_every_iter: False
+  obj_gravity: True # whether to conside the obj gravity in our optimization

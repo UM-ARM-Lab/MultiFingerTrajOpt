@@ -62,7 +62,6 @@ class AllegroScrewdriver(AllegroValveTurning):
                  friction_coefficient=0.95,
                  finger_stiffness=3,
                  arm_stiffness=None,
-                 optimize_force=False,
                  force_balance=False,
                  collision_checking=False,
                  device='cuda:0', 
@@ -71,7 +70,6 @@ class AllegroScrewdriver(AllegroValveTurning):
                  **kwargs):
         self.num_fingers = len(fingers)
         self.obj_dof_code = [0, 0, 0, 1, 1, 1]
-        self.optimize_force = optimize_force
         self.obj_mass = 0.05
         self.contact_region = contact_region
         self.arm_dof = 0
@@ -81,8 +79,7 @@ class AllegroScrewdriver(AllegroValveTurning):
                                                  object_type=object_type, world_trans=world_trans, object_asset_pos=object_asset_pos,
                                                  fingers=fingers, friction_coefficient=friction_coefficient, 
                                                  finger_stiffness=finger_stiffness, arm_stiffness=arm_stiffness, obj_dof_code=self.obj_dof_code, 
-                                                 obj_joint_dim=1, optimize_force=optimize_force, 
-                                                 screwdriver_force_balance=force_balance,
+                                                 obj_joint_dim=1, screwdriver_force_balance=force_balance,
                                                  collision_checking=collision_checking, obj_gravity=obj_gravity,
                                                  contact_region=contact_region, du=du, device=device)
         self.min_force_dict = {'index': 0.0001, 'middle': 0.1, 'ring': 0.1, 'thumb': 0.1}
@@ -355,9 +352,6 @@ class AllegroScrewdriver(AllegroValveTurning):
         # assume access to class member variables which have already done some of the computation
         N, T, d = xu.shape
         u = xu[:, :, self.dx:]
-        # if self.optimize_force:
-        #     u = u[:, :, 4 * self.num_fingers: (4 + 3) * self.num_fingers].reshape(-1, 3 * self.num_fingers)
-        # else:
         u = u[:, :, :self.robot_dof].reshape(-1, self.robot_dof)
 
         # u is the delta q commanded

@@ -41,10 +41,7 @@ class AllegroCuboidAlignment(AllegroValveTurning):
             wrench_dim += 3
         if self.obj_rotational_dim > 0:
             wrench_dim += 3
-        if self.optimize_force:
-            self.dg_per_t = self.num_fingers * (1 + 2 + 4) + wrench_dim + 1
-        else:
-            self.dg_per_t = self.num_fingers * (1 + 2) + wrench_dim + 1
+        self.dg_per_t = self.num_fingers * (1 + 2 + 4) + wrench_dim + 1
         self.dg_constant = 0
         self.dg = self.dg_per_t * T + self.dg_constant  # terminal contact points, terminal sdf=0, and dynamics
         self.dz = (self.friction_polytope_k) * (self.num_fingers + 1) # one friction constraints per finger
@@ -65,7 +62,6 @@ class AllegroCuboidAlignment(AllegroValveTurning):
                  wall_dims,
                  fingers=['index', 'middle', 'ring', 'thumb'],
                  friction_coefficient=0.95,
-                 optimize_force=False,
                  obj_dof_code=[1, 1, 1, 1, 1, 1],
                  obj_gravity=False,
                  arm_stiffness=None,
@@ -74,7 +70,6 @@ class AllegroCuboidAlignment(AllegroValveTurning):
                  device='cuda:0', **kwargs):
         self.fingers = fingers
         self.num_fingers = len(fingers)
-        self.optimize_force = optimize_force
         self.cuboid_asset_pos = cuboid_asset_pos
         self.cuboid_trans = tf.Transform3d(pos=torch.tensor(self.cuboid_asset_pos, device=device).float(),
                                           rot=torch.tensor(
@@ -91,7 +86,7 @@ class AllegroCuboidAlignment(AllegroValveTurning):
         super(AllegroCuboidAlignment, self).__init__(start=start, goal=goal, T=T, chain=chain, object_location=object_location,
                                                  object_type=object_type, world_trans=world_trans, object_asset_pos=cuboid_asset_pos,
                                                  fingers=fingers, friction_coefficient=friction_coefficient, obj_dof_code=obj_dof_code, 
-                                                 obj_joint_dim=0, optimize_force=optimize_force, du=du, obj_gravity=obj_gravity, 
+                                                 obj_joint_dim=0, du=du, obj_gravity=obj_gravity, 
                                                  arm_stiffness=arm_stiffness, finger_stiffness=finger_stiffness, 
                                                  collision_checking=self.collision_checking, device=device)
         self.env_force = True
@@ -400,17 +395,10 @@ class AllegroCuboidAlignment(AllegroValveTurning):
             = self._cuboid_wall_contact_constraint(xu[:, :, 4 * self.num_fingers: 4 * self.num_fingers + self.obj_dof],
                                                                                                   compute_grads=compute_grads,
                                                                                                   compute_hess=compute_hess)
-        if self.optimize_force:
-            g_equil, grad_g_equil, hess_g_equil = self._force_equlibrium_constraints_w_force(
-                xu=xu.reshape(N, T, self.dx + self.du),
-                compute_grads=compute_grads,
-                compute_hess=compute_hess)
-        else:
-            g_equil, grad_g_equil, hess_g_equil = self._force_equlibrium_constraints(
-                xu=xu.reshape(N, T, self.dx + self.du),
-                compute_grads=compute_grads,
-                compute_hess=compute_hess)
-
+        g_equil, grad_g_equil, hess_g_equil = self._force_equlibrium_constraints_w_force(
+            xu=xu.reshape(N, T, self.dx + self.du),
+            compute_grads=compute_grads,
+            compute_hess=compute_hess)
         g_valve, grad_g_valve, hess_g_valve = self._kinematics_constraints(
             xu=xu.reshape(N, T, self.dx + self.du),
             compute_grads=compute_grads,

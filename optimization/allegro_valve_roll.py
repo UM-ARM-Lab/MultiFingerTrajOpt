@@ -60,7 +60,6 @@ def euler_to_angular_velocity(current_euler, next_euler):
     # con_quat = - current_quat # conjugate
     # con_quat[..., 0] = current_quat[..., 0]
     # omega = 2 * tf.quaternion_raw_multiply(dquat, con_quat)[..., 1:] 
-    # TODO: quaternion and its negative are the same, but it is not true for angular velocity. Might have some bug here 
     return omega
 
 class PositionControlConstrainedSteinTrajOpt(ConstrainedSteinTrajOpt):
@@ -737,10 +736,7 @@ class AllegroValveTurning(AllegroContactProblem):
         if self.screwdriver_force_balance:
             wrench_dim += 2
 
-        if self.optimize_force:
-            self.dg_per_t = self.num_fingers * (1 + 2 + 4) + wrench_dim
-        else:
-            self.dg_per_t = self.num_fingers * (1 + 2) + wrench_dim
+        self.dg_per_t = self.num_fingers * (1 + 2 + 4) + wrench_dim
         self.dg_constant = 0
         self.dg = self.dg_per_t * T + self.dg_constant  # terminal contact points, terminal sdf=0, and dynamics
         self.dz = (self.friction_polytope_k) * self.num_fingers # one friction constraints per finger
@@ -766,7 +762,6 @@ class AllegroValveTurning(AllegroContactProblem):
                  arm_stiffness=None,
                  obj_dof_code=[0, 0, 0, 0, 0, 0], 
                  obj_joint_dim=0,
-                 optimize_force=False,
                  screwdriver_force_balance=False,
                  collision_checking=False,
                  obj_gravity=False,
@@ -775,7 +770,6 @@ class AllegroValveTurning(AllegroContactProblem):
                  contact_region=False,
                  device='cuda:0', **kwargs):
         self.screwdriver_force_balance = screwdriver_force_balance
-        self.optimize_force = optimize_force
         self.num_fingers = len(fingers)
         self.object_location = object_location
         self.obj_gravity = obj_gravity
@@ -789,10 +783,7 @@ class AllegroValveTurning(AllegroContactProblem):
         if dx is None:
             dx = self.robot_dof + obj_dof
         if du is None:
-            if optimize_force:
-                du = self.robot_dof + 3 * self.num_fingers
-            else:
-                du = self.robot_dof
+            du = self.robot_dof + 3 * self.num_fingers
         super().__init__(dx=dx, du=du, start=start, goal=goal, 
                          T=T, chain=chain, object_type=object_type, world_trans=world_trans,
                         object_asset_pos=object_asset_pos,
@@ -802,22 +793,17 @@ class AllegroValveTurning(AllegroContactProblem):
         self.friction_coefficient = friction_coefficient
         self.dynamics_constr = vmap(self._dynamics_constr)
         self.grad_dynamics_constr = vmap(jacrev(self._dynamics_constr, argnums=(0, 1, 2, 3, 4)))
-        if not optimize_force:
-            self.force_equlibrium_constr = vmap(self._force_equlibrium_constr)
-            self.grad_force_equlibrium_constr = vmap(jacrev(self._force_equlibrium_constr, argnums=(0, 1, 2, 3, 4, 5)))
-        else:
-            self.force_equlibrium_constr = vmap(self._force_equlibrium_constr_w_force)
-            self.grad_force_equlibrium_constr = vmap(jacrev(self._force_equlibrium_constr_w_force, argnums=(0, 1, 2, 3, 4, 5, 6)))
-            self.min_force_constr = vmap(self._min_force_constr, randomness='same')
-            self.grad_min_force_constr = vmap(jacrev(self._min_force_constr, argnums=(0,)))
+        self.force_equlibrium_constr = vmap(self._force_equlibrium_constr_w_force)
+        self.grad_force_equlibrium_constr = vmap(jacrev(self._force_equlibrium_constr_w_force, argnums=(0, 1, 2, 3, 4, 5, 6)))
+        self.min_force_constr = vmap(self._min_force_constr, randomness='same')
+        self.grad_min_force_constr = vmap(jacrev(self._min_force_constr, argnums=(0,)))
 
-        if optimize_force:
-            max_f = torch.ones(3 * self.num_fingers) * 10
-            min_f = torch.ones(3 * self.num_fingers) * -10
-            self.x_max = torch.cat((self.x_max, max_f))
-            self.x_min = torch.cat((self.x_min, min_f))
-            self.min_force_dict = {'index': 0.1, 'middle': 0.1, 'ring': 0.1, 'thumb': 0.1}
-            self.grad_min_force_constr = vmap(jacrev(self._min_force_constr, argnums=(0,)))
+        max_f = torch.ones(3 * self.num_fingers) * 10
+        min_f = torch.ones(3 * self.num_fingers) * -10
+        self.x_max = torch.cat((self.x_max, max_f))
+        self.x_min = torch.cat((self.x_min, min_f))
+        self.min_force_dict = {'index': 0.1, 'middle': 0.1, 'ring': 0.1, 'thumb': 0.1}
+        self.grad_min_force_constr = vmap(jacrev(self._min_force_constr, argnums=(0,)))
         self.friction_constr = vmap(self._friction_constr, randomness='same')
         self.grad_friction_constr = vmap(jacrev(self._friction_constr, argnums=(0, 1, 2)))
 
@@ -830,7 +816,6 @@ class AllegroValveTurning(AllegroContactProblem):
 
     
     def get_initial_xu(self, N):
-        # TODO: fix the initialization, for 6D movement, the angle is not supposed to be the linear interpolation of the euler angle. 
         """
         use delta joint movement to get the initial trajectory
         the action (force at the finger tip) is not used. it is randomly intiailized
@@ -838,15 +823,9 @@ class AllegroValveTurning(AllegroContactProblem):
         """
 
         # u = 0.025 * torch.randn(N, self.T, self.du, device=self.device)
-        if self.optimize_force:
-            u = 0.025 * torch.randn(N, self.T, 4 * self.num_fingers, device=self.device)
-            force = 0.15 * torch.randn(N, self.T, 3 * self.num_fingers, device=self.device)
-            # force[:, :, :3] = force[:, :, :3] * 0.01 # NOTE: scale down the index finger force, might not apply to situations other than screwdriver
-            # force = 0.025 * torch.randn(N, self.T, 3 * self.num_fingers, device=self.device)
-            u = torch.cat((u, force), dim=-1)
-        else:
-            u = 0.025 * torch.randn(N, self.T, self.du, device=self.device)
-
+        u = 0.025 * torch.randn(N, self.T, 4 * self.num_fingers, device=self.device)
+        force = 0.15 * torch.randn(N, self.T, 3 * self.num_fingers, device=self.device)
+        u = torch.cat((u, force), dim=-1)
         x = [self.start.reshape(1, self.dx).repeat(N, 1)]
         for t in range(self.T):
             next_q = x[-1][:, :self.robot_dof] + u[:, t, :self.robot_dof]
@@ -866,8 +845,6 @@ class AllegroValveTurning(AllegroContactProblem):
                 slerp = Slerp(key_times, R.concatenate([current_obj_R, goal_obj_R]))
                 interp_rots = slerp(times)
                 interp_rots = interp_rots.as_euler('XYZ')[1:]
-                # current_obj_orientation = tf.euler_angles_to_matrix(current_obj_orientation, convention='XYZ')
-                # current_obj_orientation = tf.matrix_to_rotation_6d(current_obj_orientation)
 
                 theta_position = np.linspace(current_obj_position.cpu().numpy(), self.goal[:self.obj_translational_dim].cpu().numpy(), self.T + 1)[1:]
                 theta = np.concatenate((theta_position, interp_rots), axis=-1)
@@ -887,21 +864,13 @@ class AllegroValveTurning(AllegroContactProblem):
     
     def _cost(self, xu, start, goal):
         # cost function for valve turning task
-        # TODO: check if the addtional term of the smoothness cost and running goal cost is necessary
         state = xu[:, :self.dx]  # state dim = 9
         state = torch.cat((start.reshape(1, self.dx), state), dim=0)  # combine the first time step into it
         
         action = xu[:, self.dx:self.dx + self.robot_dof]  # action dim = 8
         next_q = state[:-1, :-1] + action
-        # action_cost = 1 * torch.sum((state[1:, :-1] - next_q) ** 2)
-        # if self.optimize_force:
-        #     action_cost += 0.1 * torch.sum(xu[:, self.dx + self.robot_dof:] ** 2)
         action_cost = 0
-        # action_cost += 0.1 * torch.sum(action ** 2)
-        # action_cost = action_cost
-
         smoothness_cost = 1 * torch.sum((state[1:] - state[:-1]) ** 2)
-        # smoothness_cost += 50 * torch.sum((state[1:, -1] - state[:-1, -1]) ** 2)
         smoothness_cost += 100 * torch.sum((state[1:, -1] - state[:-1, -1]) ** 2)
 
         goal_cost = (5000 * (state[-1, -1] - goal) ** 2).reshape(-1)
@@ -926,136 +895,7 @@ class AllegroValveTurning(AllegroContactProblem):
         normal_vectors = torch.stack(normal_vectors, dim=0)
         return normal_vectors
     
-    def _force_equlibrium_constr(self, q, u, next_q, contact_jac_list, contact_point_list, next_env_q):
-        # NOTE: the constriant is defined in the robot frame
-        # the contact jac an contact points are all in the robot frame
-        # this will be vmapped, so takes in a 3 vector and a [num_finger x 3 x 8] jacobian and a dq vector
-        # TODO: the object location is changing for 6D movement, need to update
-        obj_robot_frame = self.world_trans.inverse().transform_points(self.object_location.reshape(1, 3))
-        delta_q = q + u - next_q
-        force_list = []
-        torque_list = []
-        residual_list = []
-        for i, finger_name in enumerate(self.fingers):
-            contact_jacobian = contact_jac_list[i]
-            # pseudo inverse form
-            # TODO: check why this is not stable
-            least_square_problem = torch.linalg.lstsq(contact_jacobian.transpose(-1, -2),
-                                       delta_q.unsqueeze(-1))
-            force = least_square_problem.solution.squeeze(-1)  # in the robot frame
-            residual = least_square_problem.residuals.squeeze(-1)
-            # residual_list.append(residual)
-            # approximated with contact velocity
-            # force = contact_jacobian @ delta_q
-            # left pseudo inverse form
-            # print(torch.linalg.det(contact_jacobian @ contact_jacobian.T))
-            contact_point_r_valve = contact_point_list[i] - obj_robot_frame[0]
-            torque = torch.linalg.cross(contact_point_r_valve, force, dim=-1)
-            torque_list.append(torque)
-            force_list.append(force)
-            # Force is in the robot frame instead of the world frame. 
-            # It does not matter for comuputing the force equilibrium constraint
-        # force_world_frame = self.world_trans.transform_normals(force.unsqueeze(0)).squeeze(0)
-        if self.obj_gravity:
-            if self.obj_translational_dim > 0:
-                g = self.obj_mass * torch.tensor([0, 0, -9.8], device=self.device, dtype=torch.float32)
-                force_list.append(g)
-            if self.obj_rotational_dim > 0:
-                if self.object_type == 'screwdriver':
-                    # NOTE: only works for the screwdriver now
-                    g = self.obj_mass * torch.tensor([0, 0, -9.8], device=self.device, dtype=torch.float32)
-                    # add the additional dimension for the screwdriver cap
-                    tmp = torch.zeros_like(next_env_q)
-                    next_env_q = torch.cat((next_env_q, tmp[0]), dim=-1)
-
-                    body_tf = self.object_chain.forward_kinematics(next_env_q)['screwdriver_body']
-                    body_com_pos = body_tf.get_matrix()[:, :3, -1]
-                    torque = torch.linalg.cross(body_com_pos[0], g)
-                    torque_list.append(torque)
-            if self.screwdriver_force_balance:
-                g = self.obj_mass * torch.tensor([0, 0, -9.8], device=self.device, dtype=torch.float32)
-                force_list.append(g)
-        force_list = torch.stack(force_list, dim=0)
-        force_list = torch.sum(force_list, dim=0)
-        torque_list = torch.stack(torque_list, dim=0)
-        torque_list = torch.sum(torque_list, dim=0)
-        g = []
-        if self.obj_translational_dim > 0:
-            g.append(force_list)
-        if self.obj_rotational_dim > 0:
-            g.append(torque_list)
-        g = torch.cat(g)
-        # residual_list = torch.stack(residual_list, dim=0) * 100
-        # g = torch.cat((torque_list, residual_list), dim=-1)
-        return g
-
-    def _force_equlibrium_constraints(self, xu, compute_grads=True, compute_hess=False):
-        N, T, d = xu.shape
-        x = xu[:, :, :self.dx]
-
-        # we want to add the start state to x, this x is now T + 1
-        x = torch.cat((self.start.reshape(1, 1, -1).repeat(N, 1, 1), x), dim=1)
-        q = x[:, :-1, :self.num_fingers * 4]
-        next_q = x[:, 1:, :self.num_fingers * 4]
-        next_env_q = x[:, 1:, self.num_fingers * 4:self.num_fingers * 4 + self.obj_dof]
-        u = xu[:, :, self.dx: self.dx + 4 * self.num_fingers]
-        contact_jac_list = [self.data[finger_name]['contact_jacobian'].reshape(N, T + 1, 3, 4 * self.num_fingers)[:, 1:].reshape(-1, 3, 4 * self.num_fingers)\
-                             for finger_name in self.fingers]
-        # contact_jac_list = [self.data[finger_name]['contact_jacobian'].reshape(N, T + 1, 3, 4 * self.num_fingers)[:, :-1].reshape(-1, 3, 4 * self.num_fingers)\
-        #                      for finger_name in self.fingers]
-        contact_jac_list = torch.stack(contact_jac_list, dim=1).to(device=xu.device)
-        contact_point_list = [self.data[finger_name]['closest_pt_world'].reshape(N, T + 1, 3)[:, :-1].reshape(-1, 3) for finger_name in self.fingers]
-        contact_point_list = torch.stack(contact_point_list, dim=1).to(device=xu.device)
-
-        g = self.force_equlibrium_constr(q.reshape(-1, 4 * self.num_fingers), 
-                                         u.reshape(-1, 4 * self.num_fingers), 
-                                         next_q.reshape(-1, 4 * self.num_fingers), 
-                                         contact_jac_list,
-                                         contact_point_list,
-                                         next_env_q.reshape(-1, self.obj_dof)).reshape(N, T, -1)
-        if compute_grads:
-            dg_dq, dg_du, dg_dnext_q, dg_djac, dg_dcontact, dg_dnext_env_q = self.grad_force_equlibrium_constr(q.reshape(-1, 4 * self.num_fingers), 
-                                                                                  u.reshape(-1, 4 * self.num_fingers), 
-                                                                                  next_q.reshape(-1, 4 * self.num_fingers), 
-                                                                                  contact_jac_list,
-                                                                                  contact_point_list, 
-                                                                                  next_env_q.reshape(-1, self.obj_dof))
-            
-            T_range = torch.arange(T, device=x.device)
-            T_plus = torch.arange(1, T, device=x.device)
-            T_minus = torch.arange(T - 1, device=x.device)
-            grad_g = torch.zeros(N, g.shape[2], T, T, self.dx + self.du, device=self.device)
-            # dnormal_dq = torch.zeros(N, T, 3, 8, device=self.device)  # assume zero SDF hessian
-            dg_dq = dg_dq.reshape(N, T, g.shape[2], 4 * self.num_fingers) 
-            dg_dnext_q = dg_dnext_q.reshape(N, T, g.shape[2], 4 * self.num_fingers) 
-            for i, finger_name in enumerate(self.fingers):
-                # NOTE: assume fingers have joints independent of each other
-                # TODO: check if we should use the jacobian of the current time steps or the jacobian of the next time steps.
-                # djac_dq = self.data[finger_name]['dJ_dq'].reshape(N, T + 1, 3, 4 * self.num_fingers, 4 * self.num_fingers)[:, :-1]
-                # dg_dq = dg_dq + dg_djac[:, :, i].reshape(N, T, g.shape[2], -1) @ djac_dq.reshape(N, T, -1, 4 * self.num_fingers)
-                djac_dnext_q = self.data[finger_name]['dJ_dq'].reshape(N, T + 1, 3, 4 * self.num_fingers, 4 * self.num_fingers)[:, 1:]
-                dg_dnext_q = dg_dnext_q + dg_djac[:, :, i].reshape(N, T, g.shape[2], -1) @ djac_dnext_q.reshape(N, T, -1, 4 * self.num_fingers)
-
-
-                d_contact_loc_dq = self.data[finger_name]['closest_pt_q_grad'].reshape(N, T + 1, 3, 4 * self.num_fingers)[:, :-1]
-                dg_dq = dg_dq + dg_dcontact[:, : ,i].reshape(N, T, g.shape[2], 3) @ d_contact_loc_dq 
-            grad_g[:, :, T_plus, T_minus, :4 * self.num_fingers] = dg_dq.reshape(N, T, g.shape[2], 4 * self.num_fingers)[:, 1:].transpose(1, 2)  # first q is the start
-            grad_g[:, :, T_range, T_range, self.dx:] = dg_du.reshape(N, T, -1, self.du).transpose(1, 2)
-            grad_g[:, :, T_range, T_range, :4 * self.num_fingers] = dg_dnext_q.reshape(N, T, -1, 4 * self.num_fingers).transpose(1, 2)
-            if self.obj_gravity:
-                grad_g[:, :, T_range, T_range, 4 * self.num_fingers: 4 * self.num_fingers + self.obj_dof] = dg_dnext_env_q.reshape(N, T, -1, self.obj_dof).transpose(1, 2)
-            grad_g = grad_g.transpose(1, 2)
-        else:
-            return g.reshape(N, -1), None, None
-        if compute_hess:
-            hess = torch.zeros(N, g.shape[1], T * d, T * d, device=self.device)
-            return g.reshape(N, -1), grad_g.reshape(N, -1, T * (self.dx + self.du)), hess
-        else:
-            return g.reshape(N, -1), grad_g.reshape(N, -1, T * (self.dx + self.du)), None
-        
-
     def _force_equlibrium_constr_w_force(self, q, u, next_q, force_list, contact_jac_list, contact_point_list, next_env_q):
-        # TODO: the gradient computation is missing some gradients w,r,t, the environment q
         # NOTE: the constriant is defined in the robot frame
         # NOTE: this only holds for quasi static system, as the reference point for the torque is essentially arbitrary
         # in a more general case, it has to be the CoM
@@ -1066,7 +906,6 @@ class AllegroValveTurning(AllegroContactProblem):
         torque_list = []
         reactional_torque_list = []
         for i, finger_name in enumerate(self.fingers):
-            # TODO: Assume that all the fingers are having an equlibrium, maybe we should change so that index finger is not considered
             contact_jacobian = contact_jac_list[i]
             # transform everything into the robot frame
             force_robot_frame = self.world_trans.inverse().transform_normals(force_list[i].unsqueeze(0)).squeeze(0)
@@ -1335,7 +1174,6 @@ class AllegroValveTurning(AllegroContactProblem):
         contact_v_u_tan = contact_v_u_world - (normal_projection @ contact_v_u_world.unsqueeze(-1)).squeeze(-1)
 
         # should have same tangential components
-        # TODO: this constraint value is super small
         return (R @ (contact_v_tan - contact_v_u_tan).unsqueeze(-1)).squeeze(-1)
     
     @all_finger_constraints
@@ -1413,15 +1251,8 @@ class AllegroValveTurning(AllegroContactProblem):
         B = self.get_friction_polytope().detach()
 
         # compute contact point velocity in contact frame
-        if self.optimize_force:
-            # here dq means the force in the world frame
-            contact_v_contact_frame = R.transpose(0, 1) @ dq
-        else:
-            contact_v_contact_frame = R.transpose(0, 1) @ self.world_trans.transform_normals(
-                (contact_jacobian @ dq).unsqueeze(0)).squeeze(0)
-        # TODO: there are two different ways of doing a friction cone
-        # Linearized friction cone - but based on the contact point velocity
-        # force is defined as the force of robot pushing the object
+        # here dq means the force in the world frame
+        contact_v_contact_frame = R.transpose(0, 1) @ dq
         return B @ contact_v_contact_frame
 
     @all_finger_constraints
@@ -1430,20 +1261,12 @@ class AllegroValveTurning(AllegroContactProblem):
         # assume access to class member variables which have already done some of the computation
         N, T, d = xu.shape
         u = xu[:, :, self.dx:]
-        # if self.optimize_force:
-        #     u = u[:, :, 4 * self.num_fingers: (4 + 3) * self.num_fingers].reshape(-1, 3 * self.num_fingers)
-        # else:
-
-        if self.optimize_force:
-            u = u[:, :, self.robot_dof: (self.robot_dof + 3 * self.num_fingers)].reshape(-1, 3 * self.num_fingers)
-            for i, finger_candidate in enumerate(self.fingers):
-                if finger_candidate == finger_name:
-                    force_index = [i * 3 + j for j in range(3)]
-                    u = u[:, force_index]
-                    break
-        else:
-            u = u[:, :, :self.robot_dof].reshape(-1, self.robot_dof)
-
+        u = u[:, :, self.robot_dof: (self.robot_dof + 3 * self.num_fingers)].reshape(-1, 3 * self.num_fingers)
+        for i, finger_candidate in enumerate(self.fingers):
+            if finger_candidate == finger_name:
+                force_index = [i * 3 + j for j in range(3)]
+                u = u[:, force_index]
+                break
         # u is the delta q commanded
         # retrieved cached values
         contact_jac = self.data[finger_name]['contact_jacobian'].reshape(N, T + 1, 3, self.robot_dof)[:, 1:]
@@ -1479,10 +1302,7 @@ class AllegroValveTurning(AllegroContactProblem):
             # friction constraint satisfied at the next time step
             grad_h[:, :, T_range, T_range, :self.robot_dof] = dh_dq[:, :].transpose(1, 2)
             grad_h[:, :, T_range, T_range, self.robot_dof: self.robot_dof + self.obj_dof] = dh_dtheta[:, :].transpose(1, 2)
-            if self.optimize_force:
-                grad_h[:, :, T_range, T_range, self.dx + self.robot_dof + force_index[0]: self.dx + self.robot_dof + force_index[-1] + 1] = dh_du.reshape(N, T, dh, 3).transpose(1, 2)
-            else:
-                grad_h[:, :, T_range, T_range, self.dx: self.dx + self.robot_dof] = dh_du.reshape(N, T, dh, self.robot_dof).transpose(1, 2)
+            grad_h[:, :, T_range, T_range, self.dx + self.robot_dof + force_index[0]: self.dx + self.robot_dof + force_index[-1] + 1] = dh_du.reshape(N, T, dh, 3).transpose(1, 2)
             grad_h = grad_h.transpose(1, 2).reshape(N, -1, T * d)
         else:
             return h, None, None
@@ -1589,7 +1409,6 @@ class AllegroValveTurning(AllegroContactProblem):
 
         h = torch.cat((h,
                        h_force), dim=1)
-        # TODO: debug whether this concatenation is correct
         if compute_grads:
             grad_h = torch.cat((grad_h,
                             grad_h_force), dim=1)
@@ -1615,16 +1434,10 @@ class AllegroValveTurning(AllegroContactProblem):
         #     xu=xu.reshape(N, T, self.dx + self.du),
         #     compute_grads=compute_grads,
         #     compute_hess=compute_hess)
-        if self.optimize_force:
-            g_equil, grad_g_equil, hess_g_equil = self._force_equlibrium_constraints_w_force(
-                xu=xu.reshape(N, T, self.dx + self.du),
-                compute_grads=compute_grads,
-                compute_hess=compute_hess)
-        else:
-            g_equil, grad_g_equil, hess_g_equil = self._force_equlibrium_constraints(
-                xu=xu.reshape(N, T, self.dx + self.du),
-                compute_grads=compute_grads,
-                compute_hess=compute_hess)
+        g_equil, grad_g_equil, hess_g_equil = self._force_equlibrium_constraints_w_force(
+            xu=xu.reshape(N, T, self.dx + self.du),
+            compute_grads=compute_grads,
+            compute_hess=compute_hess)
 
         g_valve, grad_g_valve, hess_g_valve = self._kinematics_constraints(
             xu=xu.reshape(N, T, self.dx + self.du),

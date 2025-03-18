@@ -29,10 +29,7 @@ class AllegroCuboidTurning(AllegroValveTurning):
             wrench_dim += 3
         if self.obj_rotational_dim > 0:
             wrench_dim += 3
-        if self.optimize_force:
-            self.dg_per_t = self.num_fingers * (1 + 2 + 4) + wrench_dim
-        else:
-            self.dg_per_t = self.num_fingers * (1 + 2) + wrench_dim
+        self.dg_per_t = self.num_fingers * (1 + 2 + 4) + wrench_dim
         self.dg_constant = 0
         self.dg = self.dg_per_t * T + self.dg_constant  # terminal contact points, terminal sdf=0, and dynamics
         self.dz = (self.friction_polytope_k) * self.num_fingers # one friction constraints per finger
@@ -50,19 +47,17 @@ class AllegroCuboidTurning(AllegroValveTurning):
                  object_asset_pos,
                  fingers=['index', 'middle', 'ring', 'thumb'],
                  friction_coefficient=0.95,
-                 optimize_force=False,
                  obj_dof_code=[1, 1, 1, 1, 1, 1],
                  obj_gravity=False,
                  device='cuda:0', **kwargs):
         self.num_fingers = len(fingers)
-        self.optimize_force = optimize_force
         self.object_asset_pos = object_asset_pos
         self.obj_mass = 0.03
 
         super(AllegroCuboidTurning, self).__init__(start=start, goal=goal, T=T, chain=chain, object_location=object_location,
                                                  object_type=object_type, world_trans=world_trans, object_asset_pos=object_asset_pos,
                                                  fingers=fingers, friction_coefficient=friction_coefficient, obj_dof_code=obj_dof_code, 
-                                                 obj_joint_dim=0, optimize_force=optimize_force, obj_gravity=obj_gravity, device=device)
+                                                 obj_joint_dim=0, obj_gravity=obj_gravity, device=device)
         self.friction_coefficient = friction_coefficient
     
     def _cost(self, xu, start, goal):
@@ -72,10 +67,7 @@ class AllegroCuboidTurning(AllegroValveTurning):
         
         action = xu[:, self.dx:self.dx + 4 * self.num_fingers]  # action dim = 8
         next_q = state[:-1, :-self.obj_dof] + action
-        if self.optimize_force:
-            action_cost = 0
-        else:
-            action_cost = torch.sum((state[1:, :-self.obj_dof] - next_q) ** 2)
+        action_cost = 0
 
         smoothness_cost = 1 * torch.sum((state[1:] - state[:-1]) ** 2)
 
