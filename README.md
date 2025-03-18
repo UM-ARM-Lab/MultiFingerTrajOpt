@@ -25,6 +25,7 @@ Ensure the following dependencies are installed:
 - Pytorch Volumetric: https://github.com/UM-ARM-Lab/pytorch_volumetric. Please swtich to the branch "collision_cost" and install from source: pip install -e .
 - torch_cg: https://github.com/sbarratt/torch_cg.
 - MFR_benchmark: https://github.com/UM-ARM-Lab/MFR_benchmark
+- CSVTO: https://github.com/UM-ARM-Lab/ccai. Please switch to the branch "multi_finger". This is the CSVTO solve (https://ieeexplore.ieee.org/stamp/stamp.jsp?arnumber=10598358) we are using.
 ## Usage
 ### Example Scripts
 
